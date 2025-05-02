@@ -151,36 +151,56 @@ public class ZpDokvsTest {
             // create an instance
             ZpDokvs<ByteBuffer> dokvs = ZpDokvsFactory.createInstance(EnvType.STANDARD, type, DEFAULT_PRIME, n, keys);
             // generate key-value pairs
-            Map<ByteBuffer, BigInteger> keyValueMap = randomKeyValueMap(DEFAULT_ZP, n);
+            Map<ByteBuffer, BigInteger> keyValueMap1 = randomKeyValueMap(DEFAULT_ZP, n);
+            Map<ByteBuffer, BigInteger> keyValueMap2 = randomKeyValueMap(DEFAULT_ZP, n);
+
             // non-doubly encode
-            BigInteger[] nonDoublyStorage = dokvs.encode(keyValueMap, false);
-            Assert.assertEquals(ZpDokvsFactory.getM(type, n), nonDoublyStorage.length);
+            BigInteger[] nonDoublyStorage1 = dokvs.encode(keyValueMap1, false);
+            Assert.assertEquals(ZpDokvsFactory.getM(type, n), nonDoublyStorage1.length);
+            BigInteger[] nonDoublyStorage2 = dokvs.encode(keyValueMap2, false);
+            Assert.assertEquals(ZpDokvsFactory.getM(type, n), nonDoublyStorage2.length);
+            // add okvs storage
+            BigInteger[] nonDoublyStorage = new BigInteger[ZpDokvsFactory.getM(type, n)];
+            for (int i = 0; i < ZpDokvsFactory.getM(type, n); i++) {
+                nonDoublyStorage[i] = nonDoublyStorage1[i].add(nonDoublyStorage2[i]).mod(DEFAULT_PRIME);
+            }
             // parallel decode
-            keyValueMap.keySet().stream().parallel().forEach(key -> {
-                BigInteger value = keyValueMap.get(key);
+            keyValueMap1.keySet().stream().parallel().forEach(key -> {
+                BigInteger value = keyValueMap1.get(key).add(keyValueMap2.get(key)).mod(DEFAULT_PRIME);
                 BigInteger decodeValue = dokvs.decode(nonDoublyStorage, key);
                 Assert.assertEquals(value, decodeValue);
             });
+
             // doubly encode
-            BigInteger[] doublyStorage = dokvs.encode(keyValueMap, true);
-            Assert.assertEquals(ZpDokvsFactory.getM(type, n), doublyStorage.length);
+            BigInteger[] doublyStorage1 = dokvs.encode(keyValueMap1, true);
+            Assert.assertEquals(ZpDokvsFactory.getM(type, n), doublyStorage1.length);
+            BigInteger[] doublyStorage2 = dokvs.encode(keyValueMap2, true);
+            Assert.assertEquals(ZpDokvsFactory.getM(type, n), doublyStorage2.length);
             // verify non-zero storage
-            for (BigInteger x : doublyStorage) {
+            for (BigInteger x : doublyStorage1) {
                 Assert.assertNotEquals(BigInteger.ZERO, x);
             }
+            for (BigInteger x : doublyStorage2) {
+                Assert.assertNotEquals(BigInteger.ZERO, x);
+            }
+            // add okvs storage
+            BigInteger[] doublyStorage = new BigInteger[ZpDokvsFactory.getM(type, n)];
+            for (int i = 0; i < ZpDokvsFactory.getM(type, n); i++) {
+                doublyStorage[i] = doublyStorage1[i].add(doublyStorage2[i]).mod(DEFAULT_PRIME);
+            }
             // parallel decode
-            keyValueMap.keySet().stream().parallel().forEach(key -> {
-                BigInteger value = keyValueMap.get(key);
+            keyValueMap1.keySet().stream().parallel().forEach(key -> {
+                BigInteger value = keyValueMap1.get(key).add(keyValueMap2.get(key)).mod(DEFAULT_PRIME);
                 BigInteger decodeValue = dokvs.decode(doublyStorage, key);
                 Assert.assertEquals(value, decodeValue);
             });
             // verify randomly generate values are not in the set
-            Set<BigInteger> valueSet = new HashSet<>(keyValueMap.values());
+            Set<BigInteger> valueSet = new HashSet<>(keyValueMap1.values());
             IntStream.range(0, MAX_RANDOM_ROUND).forEach(index -> {
                 byte[] randomKeyBytes = new byte[CommonConstants.BLOCK_BYTE_LENGTH];
                 SECURE_RANDOM.nextBytes(randomKeyBytes);
                 ByteBuffer randomKey = ByteBuffer.wrap(randomKeyBytes);
-                if (!keyValueMap.containsKey(randomKey)) {
+                if (!keyValueMap1.containsKey(randomKey)) {
                     BigInteger randomDecodeValue = dokvs.decode(doublyStorage, randomKey);
                     Assert.assertFalse(valueSet.contains(randomDecodeValue));
                 }
@@ -191,8 +211,7 @@ public class ZpDokvsTest {
     static Map<ByteBuffer, BigInteger> randomKeyValueMap(Zp zp, int size) {
         Map<ByteBuffer, BigInteger> keyValueMap = new HashMap<>();
         IntStream.range(0, size).forEach(index -> {
-            byte[] keyBytes = new byte[CommonConstants.BLOCK_BYTE_LENGTH];
-            SECURE_RANDOM.nextBytes(keyBytes);
+            byte[] keyBytes = ByteBuffer.allocate(CommonConstants.BLOCK_BYTE_LENGTH).putInt(index).array();
             BigInteger value = zp.createNonZeroRandom(SECURE_RANDOM);
             keyValueMap.put(ByteBuffer.wrap(keyBytes), value);
         });
